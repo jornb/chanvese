@@ -128,11 +128,36 @@ def bwdist(a):
     """
     return nd.distance_transform_edt(a == 0)
 
+def fit_circle(x, y):
+    import scipy
+
+    def calc_R(xc, yc):
+        """ calculate the distance of each data points from the center (xc, yc) """
+        return np.sqrt((x-xc)**2 + (y-yc)**2)
+
+    def f_2b(c):
+        """ calculate the algebraic distance between the 2D points and the mean circle centered at c=(xc, yc) """
+        Ri = calc_R(*c)
+        return Ri - Ri.mean()
+
+    center, _ = scipy.optimize.leastsq(f_2b, (np.mean(x), np.mean(y)))
+    r = np.mean(calc_R(*center))
+
+    return center, r
 
 # Displays the image with curve superimposed
 def show_curve_and_phi(fig, I, phi, color):
     fig.axes[0].cla()
     fig.axes[0].imshow(I, cmap='gray')
+        
+    # # JORNB TESTING
+    # idx = np.flatnonzero(np.logical_and(phi <= 1.2, phi >= -1.2))
+    # yx = np.array([np.unravel_index(i, phi.shape) for i in idx])  # subscripts
+    # y = yx[:, 0]
+    # x = yx[:, 1]
+    # center, radius = fit_circle(x, y)
+    # fig.axes[0].add_artist(plt.Circle(center, radius))
+
     fig.axes[0].contour(phi, 0, colors=color)
     fig.axes[0].set_axis_off()
     plt.draw()
@@ -164,44 +189,8 @@ def get_curvature(phi, idx):
     y = yx[:, 0]
     x = yx[:, 1]
 
-    # Get subscripts of neighbors
-    ym1 = y - 1
-    xm1 = x - 1
-    yp1 = y + 1
-    xp1 = x + 1
-
-    # Bounds checking
-    ym1[ym1 < 0] = 0
-    xm1[xm1 < 0] = 0
-    yp1[yp1 >= dimy] = dimy - 1
-    xp1[xp1 >= dimx] = dimx - 1
-
-    # Get indexes for 8 neighbors
-    idup = np.ravel_multi_index((yp1, x), phi.shape)
-    iddn = np.ravel_multi_index((ym1, x), phi.shape)
-    idlt = np.ravel_multi_index((y, xm1), phi.shape)
-    idrt = np.ravel_multi_index((y, xp1), phi.shape)
-    idul = np.ravel_multi_index((yp1, xm1), phi.shape)
-    idur = np.ravel_multi_index((yp1, xp1), phi.shape)
-    iddl = np.ravel_multi_index((ym1, xm1), phi.shape)
-    iddr = np.ravel_multi_index((ym1, xp1), phi.shape)
-
-    # Get central derivatives of SDF at x,y
-    phi_x = -phi.flat[idlt] + phi.flat[idrt]
-    phi_y = -phi.flat[iddn] + phi.flat[idup]
-    phi_xx = phi.flat[idlt] - 2 * phi.flat[idx] + phi.flat[idrt]
-    phi_yy = phi.flat[iddn] - 2 * phi.flat[idx] + phi.flat[idup]
-    phi_xy = 0.25 * (- phi.flat[iddl] - phi.flat[idur] +
-                     phi.flat[iddr] + phi.flat[idul])
-    phi_x2 = phi_x**2
-    phi_y2 = phi_y**2
-
-    # Compute curvature (Kappa)
-    curvature = ((phi_x2 * phi_yy + phi_y2 * phi_xx - 2 * phi_x * phi_y * phi_xy) /
-                 (phi_x2 + phi_y2 + eps) ** 1.5) * (phi_x2 + phi_y2) ** 0.5
-
-    return curvature
-
+    (xc, yc), r = fit_circle(x, y)
+    return np.sqrt((x-xc)**2 + (y-yc)**2) - r
 
 # Level set re-initialization by the sussman method
 def sussman(D, dt):
@@ -254,7 +243,7 @@ def sussman_sign(D):
 
 # Convergence Test
 def convergence(p_mask, n_mask, thresh, c):
-    diff = p_mask - n_mask
+    diff = p_mask ^ n_mask
     n_diff = np.sum(np.abs(diff))
     if n_diff < thresh:
         c = c + 1
@@ -265,7 +254,12 @@ def convergence(p_mask, n_mask, thresh, c):
 
 if __name__ == "__main__":
     img = nd.imread('brain.png', flatten=True)
-    mask = np.zeros(img.shape)
-    mask[20:100, 20:100] = 1
+    mask = np.zeros(img.shape, np.bool)
+    #mask[20:100, 20:100] = 1
+    
+    xc, yc, r = 100, 50, 40
+    for y in range(mask.shape[0]):
+        for x in range(mask.shape[1]):
+            mask[y, x] = (x-xc)**2 + (y-yc)**2 < r**2
 
-    chanvese(img, mask, max_its=1000, display=True, alpha=1.0)
+    chanvese(img, mask, max_its=1000, display=True, alpha=0.2)
